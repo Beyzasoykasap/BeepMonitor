@@ -23,9 +23,9 @@ THRESHOLD_DB = None
 timestamps = []
 db_values = []
 start_time = time.time()
+last_threshold_update = time.time()
 
 # ---------- Fonksiyonlar ----------
-
 def measure_once(duration=MEASURE_DURATION, samplerate=SAMPLERATE):
     recording = sd.rec(int(duration * samplerate), samplerate=samplerate, channels=1)
     sd.wait()
@@ -64,16 +64,20 @@ def decrease_volume(event):
     print(f"Ses azaldı: {BEEP_VOLUME:.2f}")
 
 def toggle_auto_threshold(label):
-    global auto_threshold_enabled, THRESHOLD_DB
-    auto_threshold_enabled = not auto_threshold_enabled
-    if auto_threshold_enabled:
+    global auto_threshold_enabled, THRESHOLD_DB, manual_threshold
+    if check.get_status()[0]:  # Checkbox işaretliyse
+        auto_threshold_enabled = True
         THRESHOLD_DB = auto_threshold()
-        print("Otomatik eşik aktif.")
-    else:
+        text_box.set_active(False)  # Manuel giriş devre dışı
+        print("Otomatik eşik aktif. Manuel giriş devre dışı.")
+    else:  # Checkbox işaretsizse
+        auto_threshold_enabled = False
+        text_box.set_active(True)   # Manuel giriş tekrar aktif
         if manual_threshold is not None:
             THRESHOLD_DB = manual_threshold
             print(f"Otomatik kapalı. Manuel eşik: {THRESHOLD_DB:.2f} dBFS")
         else:
+            THRESHOLD_DB = None
             print("Otomatik kapalı. Lütfen manuel eşik girin.")
     update_threshold_line()
 
@@ -84,10 +88,24 @@ def set_manual_threshold(text):
         manual_threshold = val
         auto_threshold_enabled = False
         THRESHOLD_DB = manual_threshold
+        # Checkbox işaretsiz hale getir
+        if check.get_status()[0]:
+            check.set_active(0)
         print(f"Manuel eşik değeri ayarlandı: {THRESHOLD_DB:.2f} dBFS (Otomatik kapatıldı)")
         update_threshold_line()
     except ValueError:
         print("Geçersiz sayı! Örnek: -30 veya -25.5")
+
+def update_threshold_line():
+    if timestamps:
+        x0, x1 = timestamps[0], timestamps[-1]
+    else:
+        x0, x1 = 0, 1
+    y = THRESHOLD_DB if THRESHOLD_DB is not None else -90.0
+    threshold_line.set_xdata([x0, x1])
+    threshold_line.set_ydata([y, y])
+    ax.relim()
+    ax.autoscale_view()
 
 # ---------- Grafik Ayarları ----------
 fig, ax = plt.subplots()
@@ -115,19 +133,7 @@ axbox = fig.add_axes([0.80, 0.52, 0.16, 0.06])
 text_box = TextBox(axbox, 'Eşik (dBFS)')
 text_box.on_submit(set_manual_threshold)
 
-def update_threshold_line():
-    if timestamps:
-        x0, x1 = timestamps[0], timestamps[-1]
-    else:
-        x0, x1 = 0, 1
-    y = THRESHOLD_DB if THRESHOLD_DB is not None else -90.0
-    threshold_line.set_xdata([x0, x1])
-    threshold_line.set_ydata([y, y])
-    ax.relim()
-    ax.autoscale_view()
-
 # ---------- Güncelleme Fonksiyonu ----------
-last_threshold_update = time.time()
 def update(frame):
     global last_threshold_update, THRESHOLD_DB
 
@@ -155,7 +161,7 @@ def update(frame):
         db_values.pop(0)
 
     line.set_data(timestamps, db_values)
-    if THRESHOLD_DB is not None:
+    if THRESHOLD_DB is not None and timestamps:
         threshold_line.set_xdata([timestamps[0], timestamps[-1]])
     ax.relim()
     ax.autoscale_view()
